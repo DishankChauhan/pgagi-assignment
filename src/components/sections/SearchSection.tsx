@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAppDispatch, useAppSelector } from '@/lib/hooks'
+import { useDebounce } from '@/lib/hooks/useDebounce'
 import { searchContent, clearSearch, NewsArticle, SocialPost, SpotifyTrack } from '@/lib/features/contentSlice'
 import ContentCard from '../ContentCard'
 import LoadingSpinner from '../LoadingSpinner'
@@ -13,6 +14,18 @@ export default function SearchSection() {
   const dispatch = useAppDispatch()
   const { search } = useAppSelector((state) => state.content)
   const [localQuery, setLocalQuery] = useState('')
+  
+  // Debounce the search query to avoid too many API calls
+  const debouncedQuery = useDebounce(localQuery, 500)
+
+  // Automatically search when debounced query changes
+  useEffect(() => {
+    if (debouncedQuery.trim()) {
+      dispatch(searchContent({ query: debouncedQuery.trim() }))
+    } else {
+      dispatch(clearSearch())
+    }
+  }, [debouncedQuery, dispatch])
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
@@ -111,16 +124,22 @@ export default function SearchSection() {
             type="text"
             value={localQuery}
             onChange={(e) => setLocalQuery(e.target.value)}
-            placeholder="Search for news, music, or any content..."
+            placeholder="Search for news, music, or any content... (debounced)"
             className="w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
+          {/* Search status indicator */}
+          {search.isLoading && (
+            <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+              <div className="animate-spin h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full"></div>
+            </div>
+          )}
         </div>
         <button
           type="submit"
           disabled={!localQuery.trim() || search.isLoading}
           className="px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
-          Search
+          {search.isLoading ? 'Searching...' : 'Search'}
         </button>
         {search.results.length > 0 && (
           <button
@@ -133,6 +152,14 @@ export default function SearchSection() {
           </button>
         )}
       </form>
+
+      {/* Real-time search indicator */}
+      {localQuery && localQuery !== debouncedQuery && (
+        <div className="text-sm text-blue-600 dark:text-blue-400 flex items-center space-x-2">
+          <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+          <span>Searching as you type...</span>
+        </div>
+      )}
 
       {/* Search Results */}
       {search.isLoading && <LoadingSpinner />}
@@ -164,7 +191,11 @@ export default function SearchSection() {
                   ('artists' in item && 'album' in item && 'external_urls' in item) ||
                   ('text' in item && 'user' in item)
               )
-              .map((item) => renderSearchResult(item))}
+              .map((item, index) => (
+                <div key={item.id || `search-result-${index}`}>
+                  {renderSearchResult(item)}
+                </div>
+              ))}
           </div>
         </div>
       )}

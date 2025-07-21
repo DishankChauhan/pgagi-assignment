@@ -10,6 +10,7 @@ type ContentItem = NewsArticle | SocialPost | SpotifyTrack
 interface DraggableContentCardProps {
   content: ContentItem
   id: string
+  containerId: string
 }
 
 function mapContentToCardProps(content: ContentItem) {
@@ -62,7 +63,7 @@ function mapContentToCardProps(content: ContentItem) {
   }
 }
 
-export default function DraggableContentCard({ content, id }: DraggableContentCardProps) {
+export default function DraggableContentCard({ content, id, containerId }: DraggableContentCardProps) {
   const {
     attributes,
     listeners,
@@ -74,7 +75,11 @@ export default function DraggableContentCard({ content, id }: DraggableContentCa
     id,
     data: {
       content,
-      type: 'source' in content ? 'news' : 'artists' in content ? 'music' : 'social'
+      type: 'source' in content ? 'news' : 'artists' in content ? 'music' : 'social',
+      sortable: {
+        containerId: containerId,
+        index: 0 // This will be managed by dnd-kit
+      }
     }
   })
 
@@ -95,16 +100,22 @@ export default function DraggableContentCard({ content, id }: DraggableContentCa
       {...listeners}
       className={`
         touch-none cursor-grab active:cursor-grabbing 
-        transform transition-transform hover:scale-[1.02] 
-        ${isDragging ? 'shadow-2xl ring-2 ring-blue-500' : 'hover:shadow-lg'}
+        transform transition-all duration-200 hover:scale-[1.02] 
+        ${isDragging ? 'shadow-2xl ring-2 ring-blue-500 opacity-90' : 'hover:shadow-lg'}
+        ${isDragging ? 'z-50' : 'z-10'}
       `}
     >
       <div className="relative">
         {/* Drag handle indicator */}
-        <div className="absolute top-2 right-2 opacity-40 hover:opacity-80 transition-opacity">
-          <svg className="w-4 h-4 text-gray-500" fill="currentColor" viewBox="0 0 20 20">
-            <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
-          </svg>
+        <div className="absolute top-2 right-2 opacity-40 hover:opacity-80 transition-opacity z-10">
+          <div className="flex flex-col space-y-1">
+            <div className="w-1 h-1 bg-gray-500 rounded-full"></div>
+            <div className="w-1 h-1 bg-gray-500 rounded-full"></div>
+            <div className="w-1 h-1 bg-gray-500 rounded-full"></div>
+            <div className="w-1 h-1 bg-gray-500 rounded-full"></div>
+            <div className="w-1 h-1 bg-gray-500 rounded-full"></div>
+            <div className="w-1 h-1 bg-gray-500 rounded-full"></div>
+          </div>
         </div>
         <ContentCard {...cardProps} />
       </div>

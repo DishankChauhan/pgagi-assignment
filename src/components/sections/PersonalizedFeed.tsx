@@ -7,6 +7,7 @@ import { useAutoRefresh, useRealTimeUpdates } from '@/lib/hooks/useAutoRefresh'
 import DragAndDropProvider from '../DragAndDropProvider'
 import DroppableArea from '../DroppableArea'
 import LoadingSpinner from '../LoadingSpinner'
+import SpotifySetupBanner from '../SpotifySetupBanner'
 import { useInView } from 'react-intersection-observer'
 import { motion } from 'framer-motion'
 
@@ -46,21 +47,23 @@ export default function PersonalizedFeed() {
 
   // Load more news when scrolling
   useEffect(() => {
-    if (newsInView && !news.isLoading && news.hasMore) {
+    if (newsInView && !news.isLoading && news.hasMore && currentPage.news === news.page) {
       const nextPage = currentPage.news + 1
+      console.log(`📰 Loading more news - page ${nextPage}`)
       dispatch(fetchNews({ categories: favoriteCategories, page: nextPage }))
       setCurrentPage(prev => ({ ...prev, news: nextPage }))
     }
-  }, [newsInView, news.isLoading, news.hasMore, dispatch, favoriteCategories, currentPage.news])
+  }, [newsInView, news.isLoading, news.hasMore, news.page, dispatch, favoriteCategories, currentPage.news])
 
   // Load more music when scrolling
   useEffect(() => {
-    if (musicInView && !music.isLoading && music.hasMore) {
+    if (musicInView && !music.isLoading && music.hasMore && currentPage.music === music.page) {
       const nextPage = currentPage.music + 1
+      console.log(`🎵 Loading more music - page ${nextPage}`)
       dispatch(fetchMusic({ type: 'top', page: nextPage }))
       setCurrentPage(prev => ({ ...prev, music: nextPage }))
     }
-  }, [musicInView, music.isLoading, music.hasMore, dispatch, currentPage.music])
+  }, [musicInView, music.isLoading, music.hasMore, music.page, dispatch, currentPage.music])
 
   const handleRefresh = () => {
     // Reset pagination state first
@@ -127,7 +130,7 @@ export default function PersonalizedFeed() {
             <DroppableArea
               id="news"
               title="Latest News"
-              items={news.articles.slice(0, 10)}
+              items={news.articles}
             />
             {/* News infinite scroll trigger */}
             <div ref={loadMoreNewsRef} className="flex justify-center py-4">
@@ -156,7 +159,7 @@ export default function PersonalizedFeed() {
           <DroppableArea
             id="social"
             title="Social Buzz"
-            items={social.posts.slice(0, 8)}
+            items={social.posts}
           />
 
           {/* Music Section */}
@@ -164,7 +167,7 @@ export default function PersonalizedFeed() {
             <DroppableArea
               id="music"
               title="Trending Music"
-              items={music.tracks.slice(0, 10)}
+              items={music.tracks}
             />
             {/* Music infinite scroll trigger */}
             <div ref={loadMoreMusicRef} className="flex justify-center py-4">

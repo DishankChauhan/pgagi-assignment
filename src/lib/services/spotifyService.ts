@@ -51,7 +51,7 @@ class SpotifyService {
 
     // Check if credentials are available
     if (!process.env.SPOTIFY_CLIENT_ID || !process.env.SPOTIFY_CLIENT_SECRET) {
-      console.warn('Spotify credentials not configured, using mock data')
+      console.warn('❌ Spotify credentials not configured in environment variables')
       throw new Error('Spotify credentials not configured')
     }
 
@@ -67,15 +67,18 @@ class SpotifyService {
 
       if (!response.ok) {
         const errorText = await response.text()
-        console.warn('Spotify API authentication failed:', response.status, errorText)
-        throw new Error(`Spotify API authentication failed: ${response.status}`)
+        console.warn('❌ Spotify API authentication failed:', response.status, errorText)
+        console.warn('📝 Please check your Spotify credentials at https://developer.spotify.com/dashboard')
+        console.warn('🔧 Current Client ID:', process.env.SPOTIFY_CLIENT_ID?.substring(0, 8) + '...')
+        throw new Error(`Invalid Spotify credentials - please update your .env.local file with valid credentials from https://developer.spotify.com/dashboard`)
       }
 
       const data = await response.json()
       this.clientCredentialsToken = data.access_token
+      console.log('✅ Spotify API authentication successful - Using REAL Spotify data!')
       return this.clientCredentialsToken!
     } catch (error) {
-      console.warn('Error getting Spotify token, falling back to mock data:', error)
+      console.warn('❌ Error getting Spotify token. Please get valid credentials from https://developer.spotify.com/dashboard')
       throw error
     }
   }
@@ -102,12 +105,14 @@ class SpotifyService {
 
   async searchTracks(query: string, limit: number = 20): Promise<SpotifyTrack[]> {
     try {
-      const data = await this.makeSpotifyRequest(`search?q=${encodeURIComponent(query)}&type=track&limit=${limit}`)
+      const data = await this.makeSpotifyRequest(`search?q=${encodeURIComponent(query)}&type=track&limit=${limit}&market=US`)
       
       if (!data?.tracks?.items) {
-        return this.getMockTracks(limit)
+        console.warn('No tracks found in search, using mock data')
+        return this.getMockTracks(limit, `search-${query}`)
       }
 
+      console.log(`✅ Found ${data.tracks.items.length} REAL tracks for search: "${query}"`)
       return data.tracks.items.map((track: Record<string, unknown>) => ({
         id: track.id,
         name: track.name,
@@ -120,43 +125,37 @@ class SpotifyService {
       }))
     } catch (error) {
       console.error('Error searching tracks:', error)
-      return this.getMockTracks(limit)
+      return this.getMockTracks(limit, `search-${query}`)
     }
   }
 
-  async getTopTracks(limit: number = 20): Promise<SpotifyTrack[]> {
+  async getTopTracks(limit: number = 20, page: number = 1): Promise<SpotifyTrack[]> {
     try {
-      const data = await this.makeSpotifyRequest(`browse/featured-playlists?limit=1`)
+      // Use a more popular search query for better results
+      const popularQueries = ['pop', 'top hits', 'chart', 'trending', 'popular music']
+      const query = popularQueries[(page - 1) % popularQueries.length]
       
-      if (!data?.playlists?.items?.[0]) {
-        return this.getMockTracks(limit)
+      const data = await this.makeSpotifyRequest(`search?q=${query}&type=track&limit=${limit}&market=US&offset=${(page - 1) * limit}`)
+      
+      if (!data?.tracks?.items) {
+        console.warn('No top tracks found, using mock data')
+        return this.getMockTracks(limit, `top-page${page}`)
       }
 
-      const playlistId = data.playlists.items[0].id
-      const tracksData = await this.makeSpotifyRequest(`playlists/${playlistId}/tracks?limit=${limit}`)
-      
-      if (!tracksData?.items) {
-        return this.getMockTracks(limit)
-      }
-
-      return tracksData.items
-        .filter((item: Record<string, unknown>) => item.track && (item.track as Record<string, unknown>).type === 'track')
-        .map((item: Record<string, unknown>) => {
-          const track = item.track as Record<string, unknown>
-          return {
-            id: track.id,
-            name: track.name,
-            artists: track.artists,
-            album: track.album,
-            preview_url: track.preview_url,
-            external_urls: track.external_urls,
-            popularity: track.popularity,
-            duration_ms: track.duration_ms,
-          }
-        })
+      console.log(`✅ Fetched ${data.tracks.items.length} REAL top tracks for page ${page}`)
+      return data.tracks.items.map((track: Record<string, unknown>) => ({
+        id: `${track.id}-page${page}`, // Add page suffix to ensure unique IDs
+        name: track.name,
+        artists: track.artists,
+        album: track.album,
+        preview_url: track.preview_url,
+        external_urls: track.external_urls,
+        popularity: track.popularity,
+        duration_ms: track.duration_ms,
+      }))
     } catch (error) {
       console.error('Error getting top tracks:', error)
-      return this.getMockTracks(limit)
+      return this.getMockTracks(limit, `top-page${page}`)
     }
   }
 
@@ -184,21 +183,22 @@ class SpotifyService {
     }
   }
 
-  async getTrendingTracks(limit: number = 20): Promise<SpotifyTrack[]> {
+  async getTrendingTracks(limit: number = 20, page: number = 1): Promise<SpotifyTrack[]> {
     try {
       // For trending, we could fetch from a different endpoint or use different data
       // For now, we'll use the same logic as getTopTracks but with different mock IDs
       const data = await this.makeSpotifyRequest(`browse/featured-playlists?limit=1`)
       
       if (!data?.playlists?.items?.[0]) {
-        return this.getMockTracks(limit, 'trending')
+        return this.getMockTracks(limit, `trending-page${page}`)
       }
 
       const playlistId = data.playlists.items[0].id
-      const tracksData = await this.makeSpotifyRequest(`playlists/${playlistId}/tracks?limit=${limit}`)
+      const offset = (page - 1) * limit
+      const tracksData = await this.makeSpotifyRequest(`playlists/${playlistId}/tracks?limit=${limit}&offset=${offset}`)
       
       if (!tracksData?.items) {
-        return this.getMockTracks(limit, 'trending')
+        return this.getMockTracks(limit, `trending-page${page}`)
       }
 
       return tracksData.items
@@ -219,83 +219,38 @@ class SpotifyService {
         .slice(0, limit)
     } catch (error) {
       console.error('Error getting trending tracks:', error)
-      return this.getMockTracks(limit, 'trending')
+      return this.getMockTracks(limit, `trending-page${page}`)
     }
   }
 
   private getMockTracks(limit: number, prefix: string = 'mock'): SpotifyTrack[] {
-    const mockTracks = [
-      {
-        id: `${prefix}-1`,
-        name: 'Shape of You',
-        artists: [{ name: 'Ed Sheeran' }],
+    console.warn('� USING MOCK SPOTIFY DATA - replace with valid credentials for real music data')
+    console.warn('📖 Get credentials at: https://developer.spotify.com/dashboard')
+    
+    const timestamp = Date.now()
+    const randomSeed = Math.floor(Math.random() * 1000)
+    
+    const artists = ['Ed Sheeran', 'The Weeknd', 'Harry Styles', 'Olivia Rodrigo', 'Dua Lipa', 'Taylor Swift', 'Drake', 'Billie Eilish', 'Post Malone', 'Ariana Grande']
+    const albums = ['Greatest Hits', 'Latest Album', 'Chart Toppers', 'New Release', 'Popular Songs']
+    
+    const mockTracks = Array.from({ length: Math.max(limit, 20) }, (_, i) => {
+      const artistIndex = (i + randomSeed) % artists.length
+      const albumIndex = (i + randomSeed) % albums.length
+      return {
+        id: `${prefix}-${i + 1}-${timestamp}`,
+        name: `[MOCK DATA] Song ${i + 1}`,
+        artists: [{ name: artists[artistIndex] }],
         album: {
-          name: '÷ (Divide)',
-          images: [{ url: 'https://picsum.photos/300/300?random=1' }],
-          release_date: '2017-03-03'
+          name: albums[albumIndex],
+          images: [{ url: `https://picsum.photos/300/300?random=${randomSeed + i + 1}` }],
+          release_date: new Date(2020 + (i % 4), (i % 12), (i % 28) + 1).toISOString().split('T')[0]
         },
         preview_url: null,
-        external_urls: { spotify: 'https://open.spotify.com/track/7qiZfU4dY1lWllzX7mPBI3' },
-        popularity: 89,
-        duration_ms: 233713
-      },
-      {
-        id: `${prefix}-2`, 
-        name: 'Blinding Lights',
-        artists: [{ name: 'The Weeknd' }],
-        album: {
-          name: 'After Hours',
-          images: [{ url: 'https://picsum.photos/300/300?random=2' }],
-          release_date: '2020-03-20'
-        },
-        preview_url: null,
-        external_urls: { spotify: 'https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b' },
-        popularity: 95,
-        duration_ms: 200040
-      },
-      {
-        id: `${prefix}-3`,
-        name: 'Watermelon Sugar',
-        artists: [{ name: 'Harry Styles' }],
-        album: {
-          name: 'Fine Line',
-          images: [{ url: 'https://picsum.photos/300/300?random=3' }],
-          release_date: '2019-12-13'
-        },
-        preview_url: null,
-        external_urls: { spotify: 'https://open.spotify.com/track/6UelLqGlWMcVH1E5c4H7lY' },
-        popularity: 88,
-        duration_ms: 174000
-      },
-      {
-        id: `${prefix}-4`,
-        name: 'Good 4 U',
-        artists: [{ name: 'Olivia Rodrigo' }],
-        album: {
-          name: 'SOUR',
-          images: [{ url: 'https://picsum.photos/300/300?random=4' }],
-          release_date: '2021-05-21'
-        },
-        preview_url: null,
-        external_urls: { spotify: 'https://open.spotify.com/track/4ZtFanR9U6ndgddUvNcjcG' },
-        popularity: 92,
-        duration_ms: 178000
-      },
-      {
-        id: `${prefix}-5`,
-        name: 'Levitating',
-        artists: [{ name: 'Dua Lipa' }],
-        album: {
-          name: 'Future Nostalgia',
-          images: [{ url: 'https://picsum.photos/300/300?random=5' }],
-          release_date: '2020-03-27'
-        },
-        preview_url: null,
-        external_urls: { spotify: 'https://open.spotify.com/track/463CkQjx2Zk1yXoBuierM9' },
-        popularity: 90,
-        duration_ms: 203040
+        external_urls: { spotify: `https://open.spotify.com/track/${prefix}-${i + 1}` },
+        popularity: 70 + (i % 30),
+        duration_ms: 180000 + (i * 1000)
       }
-    ]
+    })
 
     return mockTracks.slice(0, limit)
   }

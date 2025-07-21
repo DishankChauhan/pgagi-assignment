@@ -1,10 +1,33 @@
 import { configureStore } from '@reduxjs/toolkit'
 import { persistStore, persistReducer, FLUSH, REHYDRATE, PAUSE, PERSIST, PURGE, REGISTER } from 'redux-persist'
-import storage from 'redux-persist/lib/storage'
 import { combineReducers } from '@reduxjs/toolkit'
 import userPreferencesReducer from './features/userPreferencesSlice'
 import contentReducer from './features/contentSlice'
 import uiReducer from './features/uiSlice'
+
+// Create a safe storage that works on both client and server
+const createNoopStorage = () => {
+  return {
+    getItem() {
+      return Promise.resolve(null)
+    },
+    setItem(_key: string, value: string) {
+      return Promise.resolve(value)
+    },
+    removeItem() {
+      return Promise.resolve()
+    },
+  }
+}
+
+// Dynamically import storage only on client side
+let storage
+if (typeof window !== 'undefined') {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  storage = require('redux-persist/lib/storage').default
+} else {
+  storage = createNoopStorage()
+}
 
 const persistConfig = {
   key: 'root',

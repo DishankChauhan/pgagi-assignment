@@ -48,7 +48,8 @@ export default function ContentCard({
   
   const isFavorite = favoriteContent.includes(id)
 
-  const handleFavoriteToggle = () => {
+  const handleFavoriteToggle = (e: React.MouseEvent) => {
+    e.stopPropagation() // Prevent card click event
     if (isFavorite) {
       dispatch(removeFromFavorites(id))
     } else {
@@ -120,7 +121,7 @@ export default function ContentCard({
           <button
             onClick={(e) => {
               e.stopPropagation()
-              handleFavoriteToggle()
+              handleFavoriteToggle(e)
             }}
             className="ml-2 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
             aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}

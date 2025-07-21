@@ -18,6 +18,10 @@ interface DroppableAreaProps {
 export default function DroppableArea({ id, title, items }: DroppableAreaProps) {
   const { isOver, setNodeRef } = useDroppable({
     id,
+    data: {
+      type: 'container',
+      containerId: id
+    }
   })
 
   const itemIds = items.map(item => item.id)
@@ -27,13 +31,18 @@ export default function DroppableArea({ id, title, items }: DroppableAreaProps) 
       ref={setNodeRef}
       className={`min-h-[200px] p-4 rounded-lg border-2 border-dashed transition-all duration-200 ${
         isOver
-          ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 scale-[1.02]'
+          ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 scale-[1.02] shadow-lg'
           : 'border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 hover:border-gray-400 dark:hover:border-gray-500'
       }`}
     >
       <div className="flex justify-between items-center mb-4">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+        <h3 className={`text-lg font-semibold transition-colors ${
+          isOver 
+            ? 'text-blue-800 dark:text-blue-200' 
+            : 'text-gray-900 dark:text-white'
+        }`}>
           {title}
+          {isOver && ' 📥'}
         </h3>
         <span className="text-sm text-gray-500 dark:text-gray-400">
           {items.length} item{items.length !== 1 ? 's' : ''}
@@ -41,7 +50,7 @@ export default function DroppableArea({ id, title, items }: DroppableAreaProps) 
       </div>
       
       <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
-        <div className="space-y-4">
+        <div className="space-y-4" data-sortable-container={id}>
           {items.length === 0 ? (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
@@ -59,6 +68,7 @@ export default function DroppableArea({ id, title, items }: DroppableAreaProps) 
                 key={item.id}
                 id={item.id}
                 content={item}
+                containerId={id}
               />
             ))
           )}

@@ -122,11 +122,32 @@ export const fetchNews = createAsyncThunk(
   'content/fetchNews',
   async ({ categories, page = 1 }: { categories: string[], page?: number }) => {
     const category = categories.join(',') || 'general'
+    // Add timestamp to prevent caching and get fresh results
+    const timestamp = new Date().toISOString().split('T')[0] // Use current date
     const response = await fetch(
-      `https://newsapi.org/v2/top-headlines?category=${category}&page=${page}&pageSize=20&apiKey=${process.env.NEXT_PUBLIC_NEWS_API_KEY}`
+      `https://newsapi.org/v2/top-headlines?category=${category}&page=${page}&pageSize=20&sortBy=publishedAt&apiKey=${process.env.NEXT_PUBLIC_NEWS_API_KEY}&from=${timestamp}`
     )
+    
+    if (!response.ok) {
+      throw new Error(`NewsAPI error: ${response.status}`)
+    }
+    
     const data = await response.json()
-    return { articles: data.articles || [], page }
+    
+    if (data.status === 'error') {
+      throw new Error(data.message || 'NewsAPI returned an error')
+    }
+    
+    // Filter out articles with null/empty titles or descriptions
+    const validArticles = (data.articles || []).filter((article: NewsArticle) => 
+      article.title && 
+      article.title !== '[Removed]' && 
+      article.description && 
+      article.description !== '[Removed]'
+    )
+    
+    console.log(`✅ Fetched ${validArticles.length} real news articles for page ${page}`)
+    return { articles: validArticles, page }
   }
 )
 
@@ -134,18 +155,21 @@ export const fetchSocialPosts = createAsyncThunk(
   'content/fetchSocialPosts',
   async ({ hashtag = 'technology' }: { hashtag?: string }) => {
     // Mock social media data since Twitter API requires authentication
+    const timestamp = Date.now()
+    const topics = ['AI revolution', 'startup news', 'tech trends', 'innovation update', 'digital transformation', 'coding life', 'product launch', 'tech review']
+    
     const mockPosts: SocialPost[] = Array.from({ length: 10 }, (_, i) => ({
-      id: `post-${i}`,
-      text: `This is a mock social media post about ${hashtag} #${hashtag} #trending`,
+      id: `post-${i}-${timestamp}`,
+      text: `${topics[i % topics.length]} - This is about ${hashtag} and the latest developments in tech! #${hashtag} #trending #tech`,
       user: {
-        name: `User ${i + 1}`,
-        username: `user${i + 1}`,
-        profile_image_url: `https://i.pravatar.cc/150?img=${i + 1}`,
+        name: `TechUser ${i + 1}`,
+        username: `techuser${i + 1}`,
+        profile_image_url: `https://i.pravatar.cc/150?img=${(i % 50) + 1}`,
       },
       created_at: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000).toISOString(),
       public_metrics: {
-        like_count: Math.floor(Math.random() * 1000),
-        retweet_count: Math.floor(Math.random() * 100),
+        like_count: Math.floor(Math.random() * 1000) + i * 10,
+        retweet_count: Math.floor(Math.random() * 100) + i * 2,
       },
     }))
     return mockPosts
@@ -155,16 +179,31 @@ export const fetchSocialPosts = createAsyncThunk(
 export const fetchTrendingContent = createAsyncThunk(
   'content/fetchTrendingContent',
   async () => {
+    // Add random query terms to get varied trending content
+    const trendingQueries = ['breaking', 'latest', 'trending', 'news', 'today']
+    const randomQuery = trendingQueries[Math.floor(Math.random() * trendingQueries.length)]
+    
     const [newsResponse, musicResponse] = await Promise.all([
-      fetch(`https://newsapi.org/v2/top-headlines?country=us&pageSize=5&apiKey=${process.env.NEXT_PUBLIC_NEWS_API_KEY}`),
+      fetch(`https://newsapi.org/v2/everything?q=${randomQuery}&sortBy=publishedAt&pageSize=5&apiKey=${process.env.NEXT_PUBLIC_NEWS_API_KEY}`),
       fetch('/api/spotify?type=trending&limit=5')
     ])
     
     const newsData = await newsResponse.json()
     const musicData = await musicResponse.json()
     
+    // Filter valid news articles
+    const validNewsArticles = (newsData.articles || []).filter((article: NewsArticle) => 
+      article.title && 
+      article.title !== '[Removed]' && 
+      article.description && 
+      article.description !== '[Removed]'
+    )
+    
+    console.log(`✅ Fetched ${validNewsArticles.length} trending news articles`)
+    console.log(`✅ Fetched ${musicData.tracks?.length || 0} trending music tracks`)
+    
     return {
-      news: newsData.articles || [],
+      news: validNewsArticles,
       music: musicData.tracks || [],
     }
   }
@@ -173,18 +212,37 @@ export const fetchTrendingContent = createAsyncThunk(
 export const searchContent = createAsyncThunk(
   'content/searchContent',
   async ({ query }: { query: string }) => {
-    const [newsResponse, musicResponse] = await Promise.all([
-      fetch(`https://newsapi.org/v2/everything?q=${query}&pageSize=10&apiKey=${process.env.NEXT_PUBLIC_NEWS_API_KEY}`),
-      fetch(`/api/spotify?type=search&query=${encodeURIComponent(query)}&limit=10`)
-    ])
+    console.log(`🔍 Searching for: "${query}"`)
     
-    const newsData = await newsResponse.json()
-    const musicData = await musicResponse.json()
-    
-    return [
-      ...(newsData.articles || []),
-      ...(musicData.tracks || []),
-    ]
+    try {
+      const [newsResponse, musicResponse] = await Promise.all([
+        fetch(`https://newsapi.org/v2/everything?q=${encodeURIComponent(query)}&pageSize=10&sortBy=relevancy&apiKey=${process.env.NEXT_PUBLIC_NEWS_API_KEY}`),
+        fetch(`/api/spotify?type=search&query=${encodeURIComponent(query)}&limit=10`)
+      ])
+      
+      const newsData = await newsResponse.json()
+      const musicData = await musicResponse.json()
+      
+      // Filter valid news articles
+      const validNewsArticles = (newsData.articles || []).filter((article: NewsArticle) => 
+        article.title && 
+        article.title !== '[Removed]' && 
+        article.description && 
+        article.description !== '[Removed]'
+      )
+      
+      const results = [
+        ...validNewsArticles,
+        ...(musicData.tracks || []),
+      ]
+      
+      console.log(`✅ Search results: ${validNewsArticles.length} news + ${musicData.tracks?.length || 0} music = ${results.length} total`)
+      
+      return results
+    } catch (error) {
+      console.error('Error searching content:', error)
+      throw error
+    }
   }
 )
 
@@ -193,7 +251,7 @@ export const fetchMusic = createAsyncThunk(
   async ({ type = 'top', query = '', page = 1 }: { type?: string, query?: string, page?: number }) => {
     try {
       const response = await fetch(
-        `/api/spotify?type=${type}&query=${encodeURIComponent(query)}&limit=20`
+        `/api/spotify?type=${type}&query=${encodeURIComponent(query)}&limit=20&page=${page}`
       )
       if (!response.ok) {
         throw new Error('Failed to fetch music')
@@ -225,27 +283,34 @@ const contentSlice = createSlice({
     }>) => {
       const { section, activeId, overId } = action.payload
       
+      // Helper function to reorder array
+      const reorderArray = <T extends { id: string }>(array: T[], activeId: string, overId: string): T[] => {
+        const oldIndex = array.findIndex(item => item.id === activeId)
+        const newIndex = array.findIndex(item => item.id === overId)
+        
+        if (oldIndex === -1 || newIndex === -1) return array
+        
+        const result = [...array]
+        const [reorderedItem] = result.splice(oldIndex, 1)
+        result.splice(newIndex, 0, reorderedItem)
+        return result
+      }
+      
       if (section === 'news') {
-        const oldIndex = state.news.articles.findIndex(item => item.id === activeId)
-        const newIndex = state.news.articles.findIndex(item => item.id === overId)
-        if (oldIndex !== -1 && newIndex !== -1) {
-          const [reorderedItem] = state.news.articles.splice(oldIndex, 1)
-          state.news.articles.splice(newIndex, 0, reorderedItem)
-        }
+        state.news.articles = reorderArray(state.news.articles, activeId, overId)
       } else if (section === 'social') {
-        const oldIndex = state.social.posts.findIndex(item => item.id === activeId)
-        const newIndex = state.social.posts.findIndex(item => item.id === overId)
-        if (oldIndex !== -1 && newIndex !== -1) {
-          const [reorderedItem] = state.social.posts.splice(oldIndex, 1)
-          state.social.posts.splice(newIndex, 0, reorderedItem)
-        }
+        state.social.posts = reorderArray(state.social.posts, activeId, overId)
       } else if (section === 'music') {
-        const oldIndex = state.music.tracks.findIndex(item => item.id === activeId)
-        const newIndex = state.music.tracks.findIndex(item => item.id === overId)
-        if (oldIndex !== -1 && newIndex !== -1) {
-          const [reorderedItem] = state.music.tracks.splice(oldIndex, 1)
-          state.music.tracks.splice(newIndex, 0, reorderedItem)
-        }
+        state.music.tracks = reorderArray(state.music.tracks, activeId, overId)
+      } else if (section === 'search') {
+        state.search.results = reorderArray(state.search.results, activeId, overId)
+      } else if (section === 'trending') {
+        // Handle trending content reordering
+        const allTrending = [...state.trending.news, ...state.trending.music]
+        const reordered = reorderArray(allTrending, activeId, overId)
+        // Split back into news and music
+        state.trending.news = reordered.filter(item => 'source' in item) as NewsArticle[]
+        state.trending.music = reordered.filter(item => 'artists' in item) as SpotifyTrack[]
       }
     },
     moveContentBetweenSections: (state, action: PayloadAction<{
@@ -337,9 +402,10 @@ const contentSlice = createSlice({
         state.trending.error = action.error.message || 'Failed to fetch trending content'
       })
       // Search
-      .addCase(searchContent.pending, (state) => {
+      .addCase(searchContent.pending, (state, action) => {
         state.search.isLoading = true
         state.search.error = null
+        state.search.query = action.meta.arg.query
       })
       .addCase(searchContent.fulfilled, (state, action) => {
         state.search.isLoading = false
