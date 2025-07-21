@@ -248,15 +248,18 @@ export const searchContent = createAsyncThunk(
 
 export const fetchMusic = createAsyncThunk(
   'content/fetchMusic',
-  async ({ type = 'top', query = '', page = 1 }: { type?: string, query?: string, page?: number }) => {
+  async ({ type = 'top', query = '', page = 1, forceFresh = false }: { type?: string, query?: string, page?: number, forceFresh?: boolean }) => {
     try {
+      // Add cache-busting parameter if forcing fresh data
+      const cacheBuster = forceFresh ? `&t=${Date.now()}` : ''
       const response = await fetch(
-        `/api/spotify?type=${type}&query=${encodeURIComponent(query)}&limit=20&page=${page}`
+        `/api/spotify?type=${type}&query=${encodeURIComponent(query)}&limit=20&page=${page}${cacheBuster}`
       )
       if (!response.ok) {
         throw new Error('Failed to fetch music')
       }
       const data = await response.json()
+      console.log(`🎵 Fetched music data (page ${page}):`, data.tracks?.slice(0, 2))
       return { tracks: data.tracks || [], page }
     } catch (error) {
       console.error('Error fetching music:', error)
@@ -272,6 +275,13 @@ const contentSlice = createSlice({
     clearSearch: (state) => {
       state.search.results = []
       state.search.query = ''
+    },
+    clearMusic: (state) => {
+      state.music.tracks = []
+      state.music.page = 1
+      state.music.hasMore = true
+      state.music.isLoading = false
+      state.music.error = null
     },
     setSearchQuery: (state, action: PayloadAction<string>) => {
       state.search.query = action.payload
@@ -319,36 +329,122 @@ const contentSlice = createSlice({
       toSection: string
     }>) => {
       const { itemId, fromSection, toSection } = action.payload
+      console.log('🔄 Redux: Moving item', itemId, 'from', fromSection, 'to', toSection)
       
       // Find and remove item from source section
       let movedItem: NewsArticle | SocialPost | SpotifyTrack | null = null
       
-      if (fromSection === 'news') {
-        const index = state.news.articles.findIndex(item => item.id === itemId)
+      // Helper function to remove item from any array
+      const removeFromArray = <T extends { id: string }>(array: T[], id: string): T | null => {
+        const index = array.findIndex(item => item.id === id)
         if (index !== -1) {
-          movedItem = state.news.articles.splice(index, 1)[0]
+          return array.splice(index, 1)[0]
         }
-      } else if (fromSection === 'social') {
-        const index = state.social.posts.findIndex(item => item.id === itemId)
-        if (index !== -1) {
-          movedItem = state.social.posts.splice(index, 1)[0]
-        }
-      } else if (fromSection === 'music') {
-        const index = state.music.tracks.findIndex(item => item.id === itemId)
-        if (index !== -1) {
-          movedItem = state.music.tracks.splice(index, 1)[0]
-        }
+        return null
       }
       
-      // Add item to destination section (if found and sections are different)
+      // Remove from source section
+      if (fromSection === 'news') {
+        movedItem = removeFromArray(state.news.articles, itemId)
+      } else if (fromSection === 'social') {
+        movedItem = removeFromArray(state.social.posts, itemId)
+      } else if (fromSection === 'music') {
+        movedItem = removeFromArray(state.music.tracks, itemId)
+      } else if (fromSection === 'search') {
+        movedItem = removeFromArray(state.search.results, itemId)
+      } else if (fromSection === 'trending') {
+        // Try both trending arrays
+        movedItem = removeFromArray(state.trending.news, itemId) || 
+                   removeFromArray(state.trending.music, itemId)
+      }
+      
+      // Add item to destination section (if found)
       if (movedItem && fromSection !== toSection) {
-        if (toSection === 'news' && 'source' in movedItem) {
-          state.news.articles.push(movedItem)
-        } else if (toSection === 'social' && 'user' in movedItem) {
-          state.social.posts.push(movedItem)
-        } else if (toSection === 'music' && 'artists' in movedItem) {
-          state.music.tracks.push(movedItem)
+        console.log('✅ Item found, moving to:', toSection, movedItem)
+        
+        // Add to destination - allow cross-type moves for flexible organization
+        if (toSection === 'news') {
+          // Only add if it's actually a news article, otherwise create a generic news entry
+          if ('source' in movedItem) {
+            state.news.articles.push(movedItem as NewsArticle)
+          } else {
+            // Convert other types to news-like format for cross-type moves
+            const convertedItem: NewsArticle = {
+              id: movedItem.id,
+              title: 'name' in movedItem ? movedItem.name : 'text' in movedItem ? movedItem.text.substring(0, 100) : 'Moved Item',
+              description: 'name' in movedItem ? `Music: ${movedItem.name}` : 'text' in movedItem ? movedItem.text : 'Moved from another section',
+              url: 'external_urls' in movedItem ? movedItem.external_urls.spotify : '#',
+              urlToImage: 'album' in movedItem && movedItem.album.images[0] ? movedItem.album.images[0].url : '',
+              publishedAt: new Date().toISOString(),
+              source: { name: 'Moved Content' },
+              category: 'general'
+            }
+            state.news.articles.push(convertedItem)
+          }
+        } else if (toSection === 'social') {
+          if ('user' in movedItem) {
+            state.social.posts.push(movedItem as SocialPost)
+          } else {
+            // Convert other types to social post format
+            const convertedItem: SocialPost = {
+              id: movedItem.id,
+              text: 'title' in movedItem ? movedItem.title : 'name' in movedItem ? `🎵 ${movedItem.name}` : 'Moved content',
+              user: {
+                name: 'Content Organizer',
+                username: 'organizer',
+                profile_image_url: ''
+              },
+              created_at: new Date().toISOString()
+            }
+            state.social.posts.push(convertedItem)
+          }
+        } else if (toSection === 'music') {
+          if ('artists' in movedItem) {
+            state.music.tracks.push(movedItem as SpotifyTrack)
+          } else {
+            // Convert other types to music format
+            const convertedItem: SpotifyTrack = {
+              id: movedItem.id,
+              name: 'title' in movedItem ? movedItem.title : 'text' in movedItem ? movedItem.text.substring(0, 50) : 'Moved Item',
+              artists: [{ name: 'Unknown Artist' }],
+              album: {
+                name: 'Moved Content',
+                images: [],
+                release_date: new Date().toISOString().split('T')[0]
+              },
+              preview_url: null,
+              external_urls: { spotify: '#' },
+              popularity: 0,
+              duration_ms: 0
+            }
+            state.music.tracks.push(convertedItem)
+          }
+        } else if (toSection === 'search') {
+          // Search can accept any type
+          state.search.results.push(movedItem)
+        } else if (toSection === 'trending') {
+          // Add to appropriate trending array based on type
+          if ('source' in movedItem) {
+            state.trending.news.push(movedItem as NewsArticle)
+          } else if ('artists' in movedItem) {
+            state.trending.music.push(movedItem as SpotifyTrack)
+          } else {
+            // Default to trending news for social posts
+            const convertedItem: NewsArticle = {
+              id: movedItem.id,
+              title: 'text' in movedItem ? movedItem.text.substring(0, 100) : 'Social Content',
+              description: 'text' in movedItem ? movedItem.text : 'Moved social content',
+              url: '#',
+              urlToImage: '',
+              publishedAt: new Date().toISOString(),
+              source: { name: 'Social Media' },
+              category: 'social'
+            }
+            state.trending.news.push(convertedItem)
+          }
         }
+      } else if (!movedItem) {
+        console.log('❌ Item not found in source section:', fromSection)
       }
     },
   },
@@ -438,5 +534,5 @@ const contentSlice = createSlice({
   },
 })
 
-export const { clearSearch, setSearchQuery, reorderContent, moveContentBetweenSections } = contentSlice.actions
+export const { clearSearch, clearMusic, setSearchQuery, reorderContent, moveContentBetweenSections } = contentSlice.actions
 export default contentSlice.reducer

@@ -1,11 +1,10 @@
 'use client'
 
 import { useState } from 'react'
-import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent, DragStartEvent, DragOverlay } from '@dnd-kit/core'
+import { DndContext, closestCenter, closestCorners, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent, DragStartEvent, DragOverlay, DragOverEvent, CollisionDetection } from '@dnd-kit/core'
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable'
-import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
 import { useAppDispatch, useAppSelector } from '@/lib/hooks'
-import { reorderContent, moveContentBetweenSections } from '@/lib/features/contentSlice'
+import { reorderContent, moveContentBetweenSections, NewsArticle, SocialPost, SpotifyTrack } from '@/lib/features/contentSlice'
 import DraggableContentCard from './DraggableContentCard'
 import { createPortal } from 'react-dom'
 
@@ -17,7 +16,23 @@ export default function DragAndDropProvider({ children }: DragAndDropProviderPro
   const dispatch = useAppDispatch()
   const { news, social, music, search, trending } = useAppSelector((state) => state.content)
   const [activeId, setActiveId] = useState<string | null>(null)
-  const [activeItem, setActiveItem] = useState<any>(null)
+  const [activeItem, setActiveItem] = useState<NewsArticle | SocialPost | SpotifyTrack | null>(null)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [overContainer, setOverContainer] = useState<string | null>(null)
+
+  function handleDragOver(event: DragOverEvent) {
+    const { over } = event
+    const overId = over?.id as string
+
+    // Track which container we're over for better visual feedback
+    if (over?.data.current?.type === 'container') {
+      setOverContainer(over.data.current.containerId || overId)
+    } else if (over?.data.current?.sortable?.containerId) {
+      setOverContainer(over.data.current.sortable.containerId)
+    } else {
+      setOverContainer(null)
+    }
+  }
   
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -29,6 +44,18 @@ export default function DragAndDropProvider({ children }: DragAndDropProviderPro
       coordinateGetter: sortableKeyboardCoordinates,
     })
   )
+
+  // Custom collision detection that prioritizes containers
+  const customCollisionDetection: CollisionDetection = (args) => {
+    // First check for container collisions
+    const containerCollisions = closestCorners(args)
+    if (containerCollisions.length > 0) {
+      return containerCollisions
+    }
+    
+    // Fallback to closest center
+    return closestCenter(args)
+  }
 
   // Function to find item by ID across all sections
   const findItem = (id: string) => {
@@ -71,20 +98,21 @@ export default function DragAndDropProvider({ children }: DragAndDropProviderPro
   }
 
   function handleDragEnd(event: DragEndEvent) {
-    console.log('Drag ended:', event)
+    console.log('🎯 Drag ended:', event)
     setActiveId(null)
     setActiveItem(null)
+    setOverContainer(null)
     const { active, over } = event
 
     if (!over) {
-      console.log('No drop target found')
+      console.log('❌ No drop target found')
       return
     }
 
     const activeId = active.id as string
     const overId = over.id as string
 
-    console.log('Drop details:', { 
+    console.log('🎯 Drop details:', { 
       activeId, 
       overId, 
       activeData: active.data.current, 
@@ -93,32 +121,54 @@ export default function DragAndDropProvider({ children }: DragAndDropProviderPro
 
     // Get container information
     const activeContainer = active.data.current?.sortable?.containerId as string
-    let overContainer = over.data.current?.sortable?.containerId as string
+    let overContainer: string | null = null
 
-    // If we don't have an overContainer from sortable data, check if we're dropping on a container
-    if (!overContainer) {
-      if (over.data.current?.type === 'container') {
-        overContainer = over.data.current.containerId as string
+    // Priority 1: Check if dropping directly on a container
+    if (over.data.current?.type === 'container') {
+      overContainer = over.data.current.containerId || overId
+      console.log('🎯 Dropping on container:', overContainer)
+    }
+    // Priority 2: Check sortable container info
+    else if (over.data.current?.sortable?.containerId) {
+      overContainer = over.data.current.sortable.containerId
+      console.log('🎯 Dropping on sortable item in container:', overContainer)
+    }
+    // Priority 3: Try to infer from the over.id
+    else {
+      // Check if over.id matches a known container
+      const knownContainers = ['news', 'social', 'music', 'search', 'trending']
+      if (knownContainers.includes(overId)) {
+        overContainer = overId
+        console.log('🎯 Inferred container from overId:', overContainer)
       } else {
-        // Fallback to using the over.id as container ID
-        overContainer = over.id as string
+        // Find which container the item belongs to
+        const foundItem = findItem(overId)
+        if (foundItem) {
+          overContainer = foundItem.containerId
+          console.log('🎯 Found container by searching items:', overContainer)
+        }
       }
     }
 
-    console.log('Containers:', { activeContainer, overContainer })
+    console.log('🎯 Final containers:', { activeContainer, overContainer })
+
+    if (!activeContainer || !overContainer) {
+      console.log('❌ Missing container information')
+      return
+    }
 
     if (activeId !== overId) {
-      if (activeContainer && overContainer && activeContainer !== overContainer) {
+      if (activeContainer !== overContainer) {
         // Moving between different sections
-        console.log('Moving between sections:', activeContainer, '->', overContainer)
+        console.log('🔄 Moving between sections:', activeContainer, '->', overContainer)
         dispatch(moveContentBetweenSections({
           itemId: activeId,
           fromSection: activeContainer,
           toSection: overContainer,
         }))
-      } else if (activeContainer && overContainer && activeContainer === overContainer) {
+      } else {
         // Reordering within the same container
-        console.log('Reordering within same container:', activeContainer)
+        console.log('🔄 Reordering within same container:', activeContainer)
         dispatch(reorderContent({
           section: activeContainer as 'news' | 'social' | 'music' | 'trending' | 'search',
           activeId,
@@ -132,21 +182,34 @@ export default function DragAndDropProvider({ children }: DragAndDropProviderPro
     <div className={activeId ? 'select-none' : ''}>
       <DndContext
         sensors={sensors}
-        collisionDetection={closestCenter}
+        collisionDetection={customCollisionDetection}
         onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
-        modifiers={[restrictToVerticalAxis]}
       >
         {children}
         {typeof window !== 'undefined' && createPortal(
           <DragOverlay>
             {activeId && activeItem ? (
-              <div className="transform rotate-3 scale-105 opacity-95 shadow-2xl">
-                <DraggableContentCard
-                  id={activeId}
-                  content={activeItem}
-                  containerId="overlay"
-                />
+              <div className="transform rotate-3 scale-110 opacity-95 shadow-2xl">
+                <div className="relative">
+                  {/* Glowing border effect */}
+                  <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-500 rounded-lg blur-sm opacity-75"></div>
+                  
+                  {/* Content container */}
+                  <div className="relative bg-white dark:bg-gray-800 rounded-lg overflow-hidden border-2 border-blue-400">
+                    {/* Moving indicator */}
+                    <div className="absolute top-2 left-2 bg-blue-500 text-white text-xs px-2 py-1 rounded-full font-medium z-10 shadow-lg">
+                      Moving
+                    </div>
+                    
+                    <DraggableContentCard
+                      id={activeId}
+                      content={activeItem}
+                      containerId="overlay"
+                    />
+                  </div>
+                </div>
               </div>
             ) : null}
           </DragOverlay>,

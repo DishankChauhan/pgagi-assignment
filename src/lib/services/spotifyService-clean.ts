@@ -46,36 +46,48 @@ class SpotifyService {
 
   private async getClientCredentialsToken(): Promise<string> {
     if (this.clientCredentialsToken) {
-      return this.clientCredentialsToken
-    }
-
-    // Check if credentials are available
-    if (!process.env.SPOTIFY_CLIENT_ID || !process.env.SPOTIFY_CLIENT_SECRET) {
-      console.warn('❌ Spotify credentials not configured in environment variables')
-      throw new Error('Spotify credentials not configured')
+      if (!this.clientCredentialsToken) {
+        throw new Error('Spotify client credentials token is null')
+      }
+      if (this.clientCredentialsToken === null) {
+        throw new Error('Spotify client credentials token is null')
+      }
+      return this.clientCredentialsToken!
     }
 
     try {
+      const clientId = process.env.SPOTIFY_CLIENT_ID
+      const clientSecret = process.env.SPOTIFY_CLIENT_SECRET
+
+      if (!clientId || !clientSecret) {
+        throw new Error('Missing Spotify credentials. Please set SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET in your environment variables.')
+      }
+
       const response = await fetch('https://accounts.spotify.com/api/token', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
-          'Authorization': `Basic ${Buffer.from(`${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`).toString('base64')}`
+          'Authorization': `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`
         },
         body: 'grant_type=client_credentials'
       })
 
       if (!response.ok) {
-        const errorText = await response.text()
-        console.warn('❌ Spotify API authentication failed:', response.status, errorText)
-        console.warn('📝 Please check your Spotify credentials at https://developer.spotify.com/dashboard')
-        console.warn('🔧 Current Client ID:', process.env.SPOTIFY_CLIENT_ID?.substring(0, 8) + '...')
-        throw new Error(`Invalid Spotify credentials - please update your .env.local file with valid credentials from https://developer.spotify.com/dashboard`)
+        const error = await response.text()
+        console.error('❌ Spotify token error:', error)
+        throw new Error(`Failed to get Spotify token: ${response.status}`)
       }
 
       const data = await response.json()
+      console.log('✅ Successfully obtained Spotify access token')
+      
       this.clientCredentialsToken = data.access_token
-      console.log('✅ Spotify API authentication successful - Using REAL Spotify data!')
+      
+      // Clear token after expiry (minus 5 minutes buffer)
+      setTimeout(() => {
+        this.clientCredentialsToken = null
+      }, (data.expires_in - 300) * 1000)
+      
       return this.clientCredentialsToken!
     } catch (error) {
       console.warn('❌ Error getting Spotify token. Please get valid credentials from https://developer.spotify.com/dashboard')
@@ -227,38 +239,6 @@ class SpotifyService {
       console.error('Error getting trending tracks:', error)
       return []
     }
-  }
-
-  private getMockTracks(limit: number, prefix: string = 'mock'): SpotifyTrack[] {
-    console.warn('� USING MOCK SPOTIFY DATA - replace with valid credentials for real music data')
-    console.warn('📖 Get credentials at: https://developer.spotify.com/dashboard')
-    
-    const timestamp = Date.now()
-    const randomSeed = Math.floor(Math.random() * 1000)
-    
-    const artists = ['Ed Sheeran', 'The Weeknd', 'Harry Styles', 'Olivia Rodrigo', 'Dua Lipa', 'Taylor Swift', 'Drake', 'Billie Eilish', 'Post Malone', 'Ariana Grande']
-    const albums = ['Greatest Hits', 'Latest Album', 'Chart Toppers', 'New Release', 'Popular Songs']
-    
-    const mockTracks = Array.from({ length: Math.max(limit, 20) }, (_, i) => {
-      const artistIndex = (i + randomSeed) % artists.length
-      const albumIndex = (i + randomSeed) % albums.length
-      return {
-        id: `${prefix}-${i + 1}-${timestamp}`,
-        name: `[MOCK DATA] Song ${i + 1}`,
-        artists: [{ name: artists[artistIndex] }],
-        album: {
-          name: albums[albumIndex],
-          images: [{ url: `https://picsum.photos/300/300?random=${randomSeed + i + 1}` }],
-          release_date: new Date(2020 + (i % 4), (i % 12), (i % 28) + 1).toISOString().split('T')[0]
-        },
-        preview_url: null,
-        external_urls: { spotify: `https://open.spotify.com/track/${prefix}-${i + 1}` },
-        popularity: 70 + (i % 30),
-        duration_ms: 180000 + (i * 1000)
-      }
-    })
-
-    return mockTracks.slice(0, limit)
   }
 }
 
