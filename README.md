@@ -49,7 +49,7 @@ A dynamic, interactive content dashboard built with Next.js, React, TypeScript, 
 ### 1. Clone the Repository
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/DishankChauhan/pgagi-assignment
 cd pgagi-assignment
 ```
 
