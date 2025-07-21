@@ -11,7 +11,7 @@ export function useAutoRefresh() {
   )
 
   const refreshContent = useCallback(() => {
-    // Refresh main content
+    // Refresh main content from page 1 (this will replace existing content)
     dispatch(fetchNews({ categories: favoriteCategories, page: 1 }))
     dispatch(fetchMusic({ type: 'top', page: 1 }))
     dispatch(fetchSocialPosts({ hashtag: 'technology' }))

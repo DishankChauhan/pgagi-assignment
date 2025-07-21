@@ -1,6 +1,7 @@
 'use client'
 
-import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core'
+import { useState } from 'react'
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent, DragStartEvent } from '@dnd-kit/core'
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable'
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
 import { useAppDispatch } from '@/lib/hooks'
@@ -12,14 +13,25 @@ interface DragAndDropProviderProps {
 
 export default function DragAndDropProvider({ children }: DragAndDropProviderProps) {
   const dispatch = useAppDispatch()
+  const [activeId, setActiveId] = useState<string | null>(null)
+  
   const sensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     })
   )
 
+  function handleDragStart(event: DragStartEvent) {
+    setActiveId(event.active.id as string)
+  }
+
   function handleDragEnd(event: DragEndEvent) {
+    setActiveId(null)
     const { active, over } = event
 
     if (!over) return
@@ -28,9 +40,11 @@ export default function DragAndDropProvider({ children }: DragAndDropProviderPro
     const overId = over.id as string
 
     if (activeId !== overId) {
-      // Check if we're moving between different containers
-      const activeContainer = active.data.current?.sortable?.containerId
-      const overContainer = over.data.current?.sortable?.containerId || over.id
+      // Get container information from data attributes
+      const activeContainer = active.data.current?.sortable?.containerId as string
+      const overContainer = over.data.current?.sortable?.containerId as string || over.id as string
+
+      console.log('Drag end:', { activeId, overId, activeContainer, overContainer })
 
       if (activeContainer && overContainer && activeContainer !== overContainer) {
         // Moving between different sections
@@ -39,10 +53,10 @@ export default function DragAndDropProvider({ children }: DragAndDropProviderPro
           fromSection: activeContainer,
           toSection: overContainer,
         }))
-      } else {
+      } else if (activeContainer) {
         // Reordering within the same container
         dispatch(reorderContent({
-          section: activeContainer || 'personalized',
+          section: activeContainer as 'news' | 'social' | 'music' | 'trending' | 'search',
           activeId,
           overId,
         }))
@@ -51,13 +65,16 @@ export default function DragAndDropProvider({ children }: DragAndDropProviderPro
   }
 
   return (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={closestCenter}
-      onDragEnd={handleDragEnd}
-      modifiers={[restrictToVerticalAxis]}
-    >
-      {children}
-    </DndContext>
+    <div className={activeId ? 'select-none' : ''}>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        modifiers={[restrictToVerticalAxis]}
+      >
+        {children}
+      </DndContext>
+    </div>
   )
 }

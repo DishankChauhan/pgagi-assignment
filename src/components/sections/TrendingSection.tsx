@@ -55,12 +55,12 @@ export default function TrendingSection() {
         </h3>
         {trending.music.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {trending.music.map((track: SpotifyTrack, index: number) => (
+            {trending.music.map((track: SpotifyTrack) => (
               <ContentCard
-                key={track.id || `music-${index}`}
+                key={track.id || `trending-music-${track.id}`}
                 id={track.id}
                 title={track.name}
-                description={`${track.artists?.map((a, index) => a.name).join(', ') || 'Unknown Artist'} • ${track.album?.name || 'Unknown Album'}`}
+                description={`${track.artists?.map((a) => a.name).join(', ') || 'Unknown Artist'} • ${track.album?.name || 'Unknown Album'}`}
                 imageUrl={track.album.images[0]?.url}
                 publishedAt={track.album.release_date}
                 type="music"

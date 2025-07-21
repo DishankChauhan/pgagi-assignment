@@ -70,12 +70,19 @@ export default function DraggableContentCard({ content, id }: DraggableContentCa
     transform,
     transition,
     isDragging,
-  } = useSortable({ id })
+  } = useSortable({ 
+    id,
+    data: {
+      content,
+      type: 'source' in content ? 'news' : 'artists' in content ? 'music' : 'social'
+    }
+  })
 
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 1000 : 'auto',
   }
 
   const cardProps = mapContentToCardProps(content)
@@ -86,9 +93,21 @@ export default function DraggableContentCard({ content, id }: DraggableContentCa
       style={style}
       {...attributes}
       {...listeners}
-      className="touch-none"
+      className={`
+        touch-none cursor-grab active:cursor-grabbing 
+        transform transition-transform hover:scale-[1.02] 
+        ${isDragging ? 'shadow-2xl ring-2 ring-blue-500' : 'hover:shadow-lg'}
+      `}
     >
-      <ContentCard {...cardProps} />
+      <div className="relative">
+        {/* Drag handle indicator */}
+        <div className="absolute top-2 right-2 opacity-40 hover:opacity-80 transition-opacity">
+          <svg className="w-4 h-4 text-gray-500" fill="currentColor" viewBox="0 0 20 20">
+            <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
+          </svg>
+        </div>
+        <ContentCard {...cardProps} />
+      </div>
     </div>
   )
 }
